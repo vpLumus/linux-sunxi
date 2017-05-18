@@ -141,9 +141,14 @@ int iosf_mbi_register_pmic_bus_access_notifier(struct notifier_block *nb);
 /**
  * iosf_mbi_register_pmic_bus_access_notifier - Unregister PMIC bus notifier
  *
+ * Note the caller must call iosf_mbi_punit_acquire() before calling this
+ * to ensure the bus is inactive before unregistering (and call
+ * iosf_mbi_punit_release() afterwards).
+ *
  * @nb: notifier_block to unregister
  */
-int iosf_mbi_unregister_pmic_bus_access_notifier(struct notifier_block *nb);
+int iosf_mbi_unregister_pmic_bus_access_notifier_unlocked(
+	struct notifier_block *nb);
 
 /**
  * iosf_mbi_call_pmic_bus_access_notifier_chain - Call PMIC bus notifier chain
@@ -191,7 +196,8 @@ int iosf_mbi_register_pmic_bus_access_notifier(struct notifier_block *nb)
 }
 
 static inline
-int iosf_mbi_unregister_pmic_bus_access_notifier(struct notifier_block *nb)
+int iosf_mbi_unregister_pmic_bus_access_notifier_unlocked(
+	struct notifier_block *nb)
 {
 	return 0;
 }
