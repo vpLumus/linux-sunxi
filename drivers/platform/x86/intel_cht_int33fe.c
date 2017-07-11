@@ -24,9 +24,11 @@
 #include <linux/i2c.h>
 #include <linux/interrupt.h>
 #include <linux/module.h>
+#include <linux/regulator/consumer.h>
 #include <linux/slab.h>
 
 #define EXPECTED_PTYPE		4
+#define BQ24292I_REGULATOR	"regulator-bq24190-usb-vbus"
 
 struct cht_int33fe_data {
 	struct i2c_client *max17047;
@@ -41,14 +43,24 @@ static const struct property_entry max17047_props[] = {
 	{ }
 };
 
+static const struct property_entry fusb302_props[] = {
+	PROPERTY_ENTRY_STRING("fcs,extcon-name", "cht_wcove_pwrsrc"),
+	PROPERTY_ENTRY_STRING("fcs,vbus-regulator-name", BQ24292I_REGULATOR),
+	PROPERTY_ENTRY_U32("fcs,max-snk-mv", 12000),
+	PROPERTY_ENTRY_U32("fcs,max-snk-ma", 3000),
+	PROPERTY_ENTRY_U32("fcs,max-snk-mw", 36000),
+	{ }
+};
+
 static int cht_int33fe_probe(struct i2c_client *client)
 {
 	struct device *dev = &client->dev;
 	struct i2c_board_info board_info;
 	struct cht_int33fe_data *data;
+	struct regulator *regulator;
 	unsigned long long ptyp;
 	acpi_status status;
-	int fusb302_irq;
+	int ret, fusb302_irq;
 
 	status = acpi_evaluate_integer(ACPI_HANDLE(dev), "PTYP", NULL, &ptyp);
 	if (ACPI_FAILURE(status)) {
@@ -62,6 +74,28 @@ static int cht_int33fe_probe(struct i2c_client *client)
 	 */
 	if (ptyp != EXPECTED_PTYPE)
 		return -ENODEV;
+
+	/* Check presence of INT34D3 (hardware-rev 3) expected for ptype == 4 */
+	if (!acpi_dev_present("INT34D3", "1", 3)) {
+		dev_err(dev, "Error PTYPE == %d, but no INT34D3 device\n",
+			EXPECTED_PTYPE);
+		return -ENODEV;
+	}
+
+	/*
+	 * We expect the Whiskey Cove PMIC to be paired with a TI bq24292i
+	 * charger-IC, allowing charging with up to 12V, so we set the fusb302
+	 * "fcs,max-snk-mv" device property to 12000 mV. Allowing 12V with
+	 * another charger-IC is not a good idea, so we get the bq24292i vbus
+	 * regulator here, to ensure that things are as expected.
+	 * Use regulator_get_optional so that we don't get a dummy-regulator.
+	 */
+	regulator = regulator_get_optional(dev, BQ24292I_REGULATOR);
+	if (IS_ERR(regulator)) {
+		ret = PTR_ERR(regulator);
+		return (ret == -ENODEV) ? -EPROBE_DEFER : ret;
+	}
+	regulator_put(regulator);
 
 	/* The FUSB302 uses the irq at index 1 and is the only irq user */
 	fusb302_irq = acpi_dev_gpio_irq_get(ACPI_COMPANION(dev), 1);
@@ -84,7 +118,8 @@ static int cht_int33fe_probe(struct i2c_client *client)
 		return -EPROBE_DEFER; /* Wait for the i2c-adapter to load */
 
 	memset(&board_info, 0, sizeof(board_info));
-	strlcpy(board_info.type, "fusb302", I2C_NAME_SIZE);
+	strlcpy(board_info.type, "typec_fusb302", I2C_NAME_SIZE);
+	board_info.properties = fusb302_props;
 	board_info.irq = fusb302_irq;
 
 	data->fusb302 = i2c_acpi_new_device(dev, 2, &board_info);
