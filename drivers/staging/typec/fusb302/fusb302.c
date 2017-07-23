@@ -1201,6 +1201,8 @@ static void init_tcpc_dev(struct tcpc_dev *fusb302_tcpc_dev)
 {
 	fusb302_tcpc_dev->init = tcpm_init;
 	fusb302_tcpc_dev->get_vbus = tcpm_get_vbus;
+	fusb302_tcpc_dev->get_usb2_current_limit =
+		tcpm_get_usb2_current_limit_extcon;
 	fusb302_tcpc_dev->set_cc = tcpm_set_cc;
 	fusb302_tcpc_dev->get_cc = tcpm_get_cc;
 	fusb302_tcpc_dev->set_polarity = tcpm_set_polarity;
@@ -1685,6 +1687,7 @@ static int fusb302_probe(struct i2c_client *client,
 	struct fusb302_chip *chip;
 	struct i2c_adapter *adapter;
 	struct device *dev = &client->dev;
+	const char *name;
 	int ret = 0;
 	u32 val;
 
@@ -1716,6 +1719,19 @@ static int fusb302_probe(struct i2c_client *client,
 
 	if (device_property_read_u32(dev, "fcs,operating-snk-mw", &val) == 0)
 		chip->tcpc_config.operating_snk_mw = val;
+
+	/*
+	 * Devicetree platforms should get extcon via phandle (not yet
+	 * supported). On ACPI platforms, we get the name from a device prop.
+	 * This device prop is for kernel internal use only and is expected
+	 * to be set by the platform code which also registers the i2c client
+	 * for the fusb302.
+	 */
+	if (device_property_read_string(dev, "fcs,extcon-name", &name) == 0) {
+		chip->tcpc_dev.usb2_extcon = extcon_get_extcon_dev(name);
+		if (!chip->tcpc_dev.usb2_extcon)
+			return -EPROBE_DEFER;
+	}
 
 	ret = fusb302_debugfs_init(chip);
 	if (ret < 0)
