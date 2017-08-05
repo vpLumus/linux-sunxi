@@ -11,5 +11,10 @@ tcpm:
 tcpci:
 - Test with real hardware
 
+fusb302:
+- We may want to replace the  "fcs,max-snk-mv", "fcs,max-snk-ma",
+  "fcs,max-snk-mw" and "fcs,operating-snk-mw" device(tree) properties with
+  properties which are part of a generic type-c controller devicetree binding.
+
 Please send patches to Guenter Roeck <linux@roeck-us.net> and copy
 Heikki Krogerus <heikki.krogerus@linux.intel.com>.
