@@ -1,0 +1,29 @@
+Fairchild FUSB302 Type-C Port controllers
+
+Required properties :
+- compatible            : "fcs,fusb302"
+- reg                   : I2C slave address
+- interrupts            : Interrupt specifier
+
+Optional properties :
+- fcs,max-snk-microvolt : Maximum voltage to negotiate when configured as sink
+- fcs,max-snk-microamp  : Maximum current to negotiate when configured as sink
+- fcs,max-snk-microwatt : Maximum power to negotiate when configured as sink
+			  If this is less then max-snk-microvolt *
+			  max-snk-microamp then the configured current will
+			  be clamped.
+- fcs,operating-snk-microwatt :
+                          Minimum amount of power accepted from a sink
+			  when negotiating
+
+Example:
+
+fusb302: typec-portc@54 {
+	compatible = "fcs,fusb302";
+	reg = <0x54>;
+	interrupt-parent = <&nmi_intc>;
+	interrupts = <0 IRQ_TYPE_LEVEL_LOW>;
+	fcs,max-snk-microvolt = <12000000>;
+	fcs,max-snk-microamp = <3000000>;
+	fcs,max-snk-microwatt = <36000000>;
+};
