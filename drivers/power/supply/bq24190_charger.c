@@ -162,6 +162,7 @@ struct bq24190_dev_info {
 	char				model_name[I2C_NAME_SIZE];
 	bool				initialized;
 	bool				irq_event;
+	bool				input_current_limit_from_supplier;
 	struct mutex			f_reg_lock;
 	u8				f_reg;
 	u8				ss_reg;
@@ -1142,6 +1143,14 @@ static int bq24190_charger_property_is_writeable(struct power_supply *psy,
 	return ret;
 }
 
+static void bq24190_charger_external_power_changed(struct power_supply *psy)
+{
+	struct bq24190_dev_info *bdi = power_supply_get_drvdata(psy);
+
+	if (bdi->input_current_limit_from_supplier)
+		power_supply_set_input_current_limit_from_supplier(psy);
+}
+
 static enum power_supply_property bq24190_charger_properties[] = {
 	POWER_SUPPLY_PROP_CHARGE_TYPE,
 	POWER_SUPPLY_PROP_HEALTH,
@@ -1170,6 +1179,7 @@ static const struct power_supply_desc bq24190_charger_desc = {
 	.get_property		= bq24190_charger_get_property,
 	.set_property		= bq24190_charger_set_property,
 	.property_is_writeable	= bq24190_charger_property_is_writeable,
+	.external_power_changed	= bq24190_charger_external_power_changed,
 };
 
 /* Battery power supply property routines */
@@ -1658,6 +1668,10 @@ static int bq24190_probe(struct i2c_client *client,
 		dev_err(dev, "Can't get irq info\n");
 		return -EINVAL;
 	}
+
+	bdi->input_current_limit_from_supplier =
+		device_property_read_bool(dev,
+					  "input-current-limit-from-supplier");
 
 	/*
 	 * Devicetree platforms should get extcon via phandle (not yet supported).
