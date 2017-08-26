@@ -327,6 +327,11 @@ void vbox_fbdev_fini(struct drm_device *dev)
 	struct vbox_fbdev *fbdev = vbox->fbdev;
 	struct vbox_framebuffer *afb = &fbdev->afb;
 
+#ifdef CONFIG_FB_DEFERRED_IO
+	if (fbdev->helper.fbdev && fbdev->helper.fbdev->fbdefio)
+		fb_deferred_io_cleanup(fbdev->helper.fbdev);
+#endif
+
 	drm_fb_helper_unregister_fbi(&fbdev->helper);
 
 	if (afb->obj) {
@@ -343,7 +348,7 @@ void vbox_fbdev_fini(struct drm_device *dev)
 				vbox_bo_unpin(bo);
 			vbox_bo_unreserve(bo);
 		}
-		drm_gem_object_unreference_unlocked(afb->obj);
+		drm_gem_object_put_unlocked(afb->obj);
 		afb->obj = NULL;
 	}
 	drm_fb_helper_fini(&fbdev->helper);
