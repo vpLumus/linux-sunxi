@@ -43,6 +43,8 @@
 #define BQ24190_REG_POC_CHG_CONFIG_OTG			0x2
 #define BQ24190_REG_POC_SYS_MIN_MASK		(BIT(3) | BIT(2) | BIT(1))
 #define BQ24190_REG_POC_SYS_MIN_SHIFT		1
+#define BQ24190_REG_POC_SYS_MIN_MIN			3000
+#define BQ24190_REG_POC_SYS_MIN_MAX			3700
 #define BQ24190_REG_POC_BOOST_LIM_MASK		BIT(0)
 #define BQ24190_REG_POC_BOOST_LIM_SHIFT		0
 
@@ -57,9 +59,13 @@
 #define BQ24190_REG_PCTCC_IPRECHG_MASK		(BIT(7) | BIT(6) | BIT(5) | \
 						 BIT(4))
 #define BQ24190_REG_PCTCC_IPRECHG_SHIFT		4
+#define BQ24190_REG_PCTCC_IPRECHG_MIN			128
+#define BQ24190_REG_PCTCC_IPRECHG_MAX			2048
 #define BQ24190_REG_PCTCC_ITERM_MASK		(BIT(3) | BIT(2) | BIT(1) | \
 						 BIT(0))
 #define BQ24190_REG_PCTCC_ITERM_SHIFT		0
+#define BQ24190_REG_PCTCC_ITERM_MIN			128
+#define BQ24190_REG_PCTCC_ITERM_MAX			2048
 
 #define BQ24190_REG_CVC		0x04 /* Charge Voltage Control */
 #define BQ24190_REG_CVC_VREG_MASK		(BIT(7) | BIT(6) | BIT(5) | \
@@ -159,6 +165,9 @@ struct bq24190_dev_info {
 	char				model_name[I2C_NAME_SIZE];
 	bool				initialized;
 	bool				irq_event;
+	u16				sys_min;
+	u16				iprechg;
+	u16				iterm;
 	struct mutex			f_reg_lock;
 	u8				f_reg;
 	u8				ss_reg;
@@ -504,15 +513,7 @@ static int bq24190_sysfs_create_group(struct bq24190_dev_info *bdi)
 static inline void bq24190_sysfs_remove_group(struct bq24190_dev_info *bdi) {}
 #endif
 
-/*
- * According to the "Host Mode and default Mode" section of the
- * manual, a write to any register causes the bq24190 to switch
- * from default mode to host mode.  It will switch back to default
- * mode after a WDT timeout unless the WDT is turned off as well.
- * So, by simply turning off the WDT, we accomplish both with the
- * same write.
- */
-static int bq24190_set_mode_host(struct bq24190_dev_info *bdi)
+static int bq24190_set_config(struct bq24190_dev_info *bdi)
 {
 	int ret;
 	u8 v;
@@ -523,9 +524,52 @@ static int bq24190_set_mode_host(struct bq24190_dev_info *bdi)
 
 	bdi->watchdog = ((v & BQ24190_REG_CTTC_WATCHDOG_MASK) >>
 					BQ24190_REG_CTTC_WATCHDOG_SHIFT);
+
+	/*
+	 * According to the "Host Mode and default Mode" section of the
+	 * manual, a write to any register causes the bq24190 to switch
+	 * from default mode to host mode.  It will switch back to default
+	 * mode after a WDT timeout unless the WDT is turned off as well.
+	 * So, by simply turning off the WDT, we accomplish both with the
+	 * same write.
+	 */
 	v &= ~BQ24190_REG_CTTC_WATCHDOG_MASK;
 
-	return bq24190_write(bdi, BQ24190_REG_CTTC, v);
+	ret = bq24190_write(bdi, BQ24190_REG_CTTC, v);
+	if (ret < 0)
+		return ret;
+
+	if (bdi->sys_min) {
+		v = bdi->sys_min / 100 - 30; // manual section 9.5.1.2, table 9
+		ret = bq24190_write_mask(bdi, BQ24190_REG_POC,
+					 BQ24190_REG_POC_SYS_MIN_MASK,
+					 BQ24190_REG_POC_SYS_MIN_SHIFT,
+					 v);
+		if (ret < 0)
+			return ret;
+	}
+
+	if (bdi->iprechg) {
+		v = bdi->iprechg / 128 - 1; // manual section 9.5.1.4, table 11
+		ret = bq24190_write_mask(bdi, BQ24190_REG_PCTCC,
+					 BQ24190_REG_PCTCC_IPRECHG_MASK,
+					 BQ24190_REG_PCTCC_IPRECHG_SHIFT,
+					 v);
+		if (ret < 0)
+			return ret;
+	}
+
+	if (bdi->iterm) {
+		v = bdi->iterm / 128 - 1; // manual section 9.5.1.4, table 11
+		ret = bq24190_write_mask(bdi, BQ24190_REG_PCTCC,
+					 BQ24190_REG_PCTCC_ITERM_MASK,
+					 BQ24190_REG_PCTCC_ITERM_SHIFT,
+					 v);
+		if (ret < 0)
+			return ret;
+	}
+
+	return 0;
 }
 
 static int bq24190_register_reset(struct bq24190_dev_info *bdi)
@@ -773,6 +817,38 @@ static int bq24190_charger_set_temp_alert_max(struct bq24190_dev_info *bdi,
 	return bq24190_battery_set_temp_alert_max(bdi, val);
 }
 
+static int bq24190_charger_get_precharge(struct bq24190_dev_info *bdi,
+		union power_supply_propval *val)
+{
+	u8 v;
+	int ret;
+
+	ret = bq24190_read_mask(bdi, BQ24190_REG_PCTCC,
+			BQ24190_REG_PCTCC_IPRECHG_MASK,
+			BQ24190_REG_PCTCC_IPRECHG_SHIFT, &v);
+	if (ret < 0)
+		return ret;
+
+	val->intval = ++v * 128 * 1000;
+	return 0;
+}
+
+static int bq24190_charger_get_charge_term(struct bq24190_dev_info *bdi,
+		union power_supply_propval *val)
+{
+	u8 v;
+	int ret;
+
+	ret = bq24190_read_mask(bdi, BQ24190_REG_PCTCC,
+			BQ24190_REG_PCTCC_ITERM_MASK,
+			BQ24190_REG_PCTCC_ITERM_SHIFT, &v);
+	if (ret < 0)
+		return ret;
+
+	val->intval = ++v * 128 * 1000;
+	return 0;
+}
+
 static int bq24190_charger_get_current(struct bq24190_dev_info *bdi,
 		union power_supply_propval *val)
 {
@@ -865,6 +941,33 @@ static int bq24190_charger_set_voltage(struct bq24190_dev_info *bdi,
 			ARRAY_SIZE(bq24190_cvc_vreg_values), val->intval);
 }
 
+static int bq24190_charger_get_iinlimit(struct bq24190_dev_info *bdi,
+		union power_supply_propval *val)
+{
+	int iinlimit, ret;
+
+	ret = bq24190_get_field_val(bdi, BQ24190_REG_ISC,
+			BQ24190_REG_ISC_IINLIM_MASK,
+			BQ24190_REG_ISC_IINLIM_SHIFT,
+			bq24190_isc_iinlim_values,
+			ARRAY_SIZE(bq24190_isc_iinlim_values), &iinlimit);
+	if (ret < 0)
+		return ret;
+
+	val->intval = iinlimit;
+	return 0;
+}
+
+static int bq24190_charger_set_iinlimit(struct bq24190_dev_info *bdi,
+		const union power_supply_propval *val)
+{
+	return bq24190_set_field_val(bdi, BQ24190_REG_ISC,
+			BQ24190_REG_ISC_IINLIM_MASK,
+			BQ24190_REG_ISC_IINLIM_SHIFT,
+			bq24190_isc_iinlim_values,
+			ARRAY_SIZE(bq24190_isc_iinlim_values), val->intval);
+}
+
 static int bq24190_charger_get_property(struct power_supply *psy,
 		enum power_supply_property psp, union power_supply_propval *val)
 {
@@ -893,6 +996,12 @@ static int bq24190_charger_get_property(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_TEMP_ALERT_MAX:
 		ret =  bq24190_charger_get_temp_alert_max(bdi, val);
 		break;
+	case POWER_SUPPLY_PROP_PRECHARGE_CURRENT:
+		ret = bq24190_charger_get_precharge(bdi, val);
+		break;
+	case POWER_SUPPLY_PROP_CHARGE_TERM_CURRENT:
+		ret = bq24190_charger_get_charge_term(bdi, val);
+		break;
 	case POWER_SUPPLY_PROP_CONSTANT_CHARGE_CURRENT:
 		ret = bq24190_charger_get_current(bdi, val);
 		break;
@@ -904,6 +1013,9 @@ static int bq24190_charger_get_property(struct power_supply *psy,
 		break;
 	case POWER_SUPPLY_PROP_CONSTANT_CHARGE_VOLTAGE_MAX:
 		ret = bq24190_charger_get_voltage_max(bdi, val);
+		break;
+	case POWER_SUPPLY_PROP_INPUT_CURRENT_LIMIT:
+		ret = bq24190_charger_get_iinlimit(bdi, val);
 		break;
 	case POWER_SUPPLY_PROP_SCOPE:
 		val->intval = POWER_SUPPLY_SCOPE_SYSTEM;
@@ -956,6 +1068,9 @@ static int bq24190_charger_set_property(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_CONSTANT_CHARGE_VOLTAGE:
 		ret = bq24190_charger_set_voltage(bdi, val);
 		break;
+	case POWER_SUPPLY_PROP_INPUT_CURRENT_LIMIT:
+		ret = bq24190_charger_set_iinlimit(bdi, val);
+		break;
 	default:
 		ret = -EINVAL;
 	}
@@ -977,6 +1092,7 @@ static int bq24190_charger_property_is_writeable(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_CHARGE_TYPE:
 	case POWER_SUPPLY_PROP_CONSTANT_CHARGE_CURRENT:
 	case POWER_SUPPLY_PROP_CONSTANT_CHARGE_VOLTAGE:
+	case POWER_SUPPLY_PROP_INPUT_CURRENT_LIMIT:
 		ret = 1;
 		break;
 	default:
@@ -992,10 +1108,13 @@ static enum power_supply_property bq24190_charger_properties[] = {
 	POWER_SUPPLY_PROP_ONLINE,
 	POWER_SUPPLY_PROP_STATUS,
 	POWER_SUPPLY_PROP_TEMP_ALERT_MAX,
+	POWER_SUPPLY_PROP_PRECHARGE_CURRENT,
+	POWER_SUPPLY_PROP_CHARGE_TERM_CURRENT,
 	POWER_SUPPLY_PROP_CONSTANT_CHARGE_CURRENT,
 	POWER_SUPPLY_PROP_CONSTANT_CHARGE_CURRENT_MAX,
 	POWER_SUPPLY_PROP_CONSTANT_CHARGE_VOLTAGE,
 	POWER_SUPPLY_PROP_CONSTANT_CHARGE_VOLTAGE_MAX,
+	POWER_SUPPLY_PROP_INPUT_CURRENT_LIMIT,
 	POWER_SUPPLY_PROP_SCOPE,
 	POWER_SUPPLY_PROP_MODEL_NAME,
 	POWER_SUPPLY_PROP_MANUFACTURER,
@@ -1460,11 +1579,48 @@ static int bq24190_hw_init(struct bq24190_dev_info *bdi)
 	if (ret < 0)
 		return ret;
 
-	ret = bq24190_set_mode_host(bdi);
+	ret = bq24190_set_config(bdi);
 	if (ret < 0)
 		return ret;
 
 	return bq24190_read(bdi, BQ24190_REG_SS, &bdi->ss_reg);
+}
+
+static int bq24190_get_config(struct bq24190_dev_info *bdi)
+{
+	const char * const s = "ti,system-minimum-microvolt";
+	struct power_supply_battery_info info = {};
+	int v;
+
+	if (device_property_read_u32(bdi->dev, s, &v) == 0) {
+		v /= 1000;
+		if (v >= BQ24190_REG_POC_SYS_MIN_MIN
+		 && v <= BQ24190_REG_POC_SYS_MIN_MAX)
+			bdi->sys_min = v;
+		else
+			dev_warn(bdi->dev, "invalid value for %s: %u\n", s, v);
+	}
+
+	if (bdi->dev->of_node &&
+	    !power_supply_get_battery_info(bdi->charger, &info)) {
+		v = info.precharge_current_ua / 1000;
+		if (v >= BQ24190_REG_PCTCC_IPRECHG_MIN
+		 && v <= BQ24190_REG_PCTCC_IPRECHG_MAX)
+			bdi->iprechg = v;
+		else
+			dev_warn(bdi->dev, "invalid value for battery:precharge-current-microamp: %d\n",
+				 v);
+
+		v = info.charge_term_current_ua / 1000;
+		if (v >= BQ24190_REG_PCTCC_ITERM_MIN
+		 && v <= BQ24190_REG_PCTCC_ITERM_MAX)
+			bdi->iterm = v;
+		else
+			dev_warn(bdi->dev, "invalid value for battery:charge-term-current-microamp: %d\n",
+				 v);
+	}
+
+	return 0;
 }
 
 static int bq24190_probe(struct i2c_client *client,
@@ -1497,7 +1653,7 @@ static int bq24190_probe(struct i2c_client *client,
 
 	i2c_set_clientdata(client, bdi);
 
-	if (!client->irq) {
+	if (client->irq <= 0) {
 		dev_err(dev, "Can't get irq info\n");
 		return -EINVAL;
 	}
@@ -1530,13 +1686,8 @@ static int bq24190_probe(struct i2c_client *client,
 		goto out_pmrt;
 	}
 
-	ret = bq24190_hw_init(bdi);
-	if (ret < 0) {
-		dev_err(dev, "Hardware init failed\n");
-		goto out_pmrt;
-	}
-
 	charger_cfg.drv_data = bdi;
+	charger_cfg.of_node = dev->of_node;
 	charger_cfg.supplied_to = bq24190_charger_supplied_to;
 	charger_cfg.num_supplicants = ARRAY_SIZE(bq24190_charger_supplied_to),
 	bdi->charger = power_supply_register(dev, &bq24190_charger_desc,
@@ -1560,8 +1711,20 @@ static int bq24190_probe(struct i2c_client *client,
 		}
 	}
 
+	ret = bq24190_get_config(bdi);
+	if (ret < 0) {
+		dev_err(dev, "Can't get devicetree config\n");
+		goto out_charger;
+	}
+
+	ret = bq24190_hw_init(bdi);
+	if (ret < 0) {
+		dev_err(dev, "Hardware init failed\n");
+		goto out_charger;
+	}
+
 	ret = bq24190_sysfs_create_group(bdi);
-	if (ret) {
+	if (ret < 0) {
 		dev_err(dev, "Can't create sysfs entries\n");
 		goto out_charger;
 	}
@@ -1704,7 +1867,7 @@ static __maybe_unused int bq24190_pm_resume(struct device *dev)
 	}
 
 	bq24190_register_reset(bdi);
-	bq24190_set_mode_host(bdi);
+	bq24190_set_config(bdi);
 	bq24190_read(bdi, BQ24190_REG_SS, &bdi->ss_reg);
 
 	if (error >= 0) {
@@ -1736,6 +1899,7 @@ MODULE_DEVICE_TABLE(i2c, bq24190_i2c_ids);
 #ifdef CONFIG_OF
 static const struct of_device_id bq24190_of_match[] = {
 	{ .compatible = "ti,bq24190", },
+	{ .compatible = "ti,bq24192i", },
 	{ },
 };
 MODULE_DEVICE_TABLE(of, bq24190_of_match);
