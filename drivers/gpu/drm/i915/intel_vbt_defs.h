@@ -149,16 +149,19 @@ struct bdb_general_features {
 	u8 ssc_freq:1;
 	u8 enable_lfp_on_override:1;
 	u8 disable_ssc_ddt:1;
-	u8 rsvd7:1;
+	u8 underscan_vga_timings:1;
 	u8 display_clock_mode:1;
-	u8 rsvd8:1; /* finish byte */
+	u8 vbios_hotplug_support:1;
 
         /* bits 3 */
 	u8 disable_smooth_vision:1;
 	u8 single_dvi:1;
-	u8 rsvd9:1;
+	u8 rotate_180:1;					/* 181 */
 	u8 fdi_rx_polarity_inverted:1;
-	u8 rsvd10:4; /* finish byte */
+	u8 vbios_extended_mode:1;				/* 160 */
+	u8 copy_ilfp_dtd_to_sdvo_lvds_dtd:1;			/* 160 */
+	u8 panel_best_fit_timing:1;				/* 160 */
+	u8 ignore_strap_state:1;				/* 160 */
 
         /* bits 4 */
 	u8 legacy_monitor_detect;
@@ -167,9 +170,10 @@ struct bdb_general_features {
 	u8 int_crt_support:1;
 	u8 int_tv_support:1;
 	u8 int_efp_support:1;
-	u8 dp_ssc_enb:1;	/* PCH attached eDP supports SSC */
+	u8 dp_ssc_enable:1;	/* PCH attached eDP supports SSC */
 	u8 dp_ssc_freq:1;	/* SSC freq for PCH attached eDP */
-	u8 rsvd11:3; /* finish byte */
+	u8 dp_ssc_dongle_supported:1;
+	u8 rsvd11:2; /* finish byte */
 } __packed;
 
 /* pre-915 */
@@ -376,7 +380,11 @@ struct child_device_config {
 		} __packed;
 	} __packed;
 
-	u8 capabilities;
+	u8 pipe_cap:2;
+	u8 sdvo_stall:1;					/* 158 */
+	u8 hpd_status:2;
+	u8 integrated_encoder:1;
+	u8 capabilities_reserved:2;
 	u8 dvo_wiring; /* See DEVICE_WIRE_* above */
 
 	union {
@@ -386,10 +394,12 @@ struct child_device_config {
 
 	u16 extended_type;
 	u8 dvo_function;
-	u8 flags2;						/* 195 */
+	u8 dp_usb_type_c:1;					/* 195 */
+	u8 flags2_reserved:7;					/* 195 */
 	u8 dp_gpio_index;					/* 195 */
 	u16 dp_gpio_pin_num;					/* 195 */
-	u8 iboost_level;
+	u8 dp_iboost_level:4;					/* 196 */
+	u8 hdmi_iboost_level:4;					/* 196 */
 } __packed;
 
 struct bdb_general_definitions {
@@ -678,9 +688,19 @@ struct bdb_driver_features {
 #define EDP_VSWING_1_2V		3
 
 
-struct edp_link_params {
+struct edp_fast_link_params {
 	u8 rate:4;
 	u8 lanes:4;
+	u8 preemphasis:4;
+	u8 vswing:4;
+} __packed;
+
+struct edp_pwm_delays {
+	u16 pwm_on_to_backlight_enable;
+	u16 backlight_disable_to_pwm_off;
+} __packed;
+
+struct edp_full_link_params {
 	u8 preemphasis:4;
 	u8 vswing:4;
 } __packed;
@@ -688,13 +708,18 @@ struct edp_link_params {
 struct bdb_edp {
 	struct edp_power_seq power_seqs[16];
 	u32 color_depth;
-	struct edp_link_params link_params[16];
+	struct edp_fast_link_params fast_link_params[16];
 	u32 sdrrs_msa_timing_delay;
 
 	/* ith bit indicates enabled/disabled for (i+1)th panel */
-	u16 edp_s3d_feature;
-	u16 edp_t3_optimization;
-	u64 edp_vswing_preemph;		/* v173 */
+	u16 edp_s3d_feature;					/* 162 */
+	u16 edp_t3_optimization;				/* 165 */
+	u64 edp_vswing_preemph;					/* 173 */
+	u16 fast_link_training;					/* 182 */
+	u16 dpcd_600h_write_required;				/* 185 */
+	struct edp_pwm_delays pwm_delays[16];			/* 186 */
+	u16 full_link_params_provided;				/* 199 */
+	struct edp_full_link_params full_link_params[16];	/* 199 */
 } __packed;
 
 struct psr_table {

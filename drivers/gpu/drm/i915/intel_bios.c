@@ -576,7 +576,7 @@ parse_edp(struct drm_i915_private *dev_priv, const struct bdb_header *bdb)
 {
 	const struct bdb_edp *edp;
 	const struct edp_power_seq *edp_pps;
-	const struct edp_link_params *edp_link_params;
+	const struct edp_fast_link_params *edp_link_params;
 	int panel_type = dev_priv->vbt.panel_type;
 
 	edp = find_section(bdb, BDB_EDP);
@@ -600,7 +600,7 @@ parse_edp(struct drm_i915_private *dev_priv, const struct bdb_header *bdb)
 
 	/* Get the eDP sequencing and link info */
 	edp_pps = &edp->power_seqs[panel_type];
-	edp_link_params = &edp->link_params[panel_type];
+	edp_link_params = &edp->fast_link_params[panel_type];
 
 	dev_priv->vbt.edp.pps = *edp_pps;
 
@@ -1218,10 +1218,10 @@ static void parse_ddi_port(struct drm_i915_private *dev_priv, enum port port,
 
 	/* Parse the I_boost config for SKL and above */
 	if (bdb->version >= 196 && child->iboost) {
-		info->dp_boost_level = translate_iboost(child->iboost_level & 0xF);
+		info->dp_boost_level = translate_iboost(child->dp_iboost_level);
 		DRM_DEBUG_KMS("VBT (e)DP boost level for port %c: %d\n",
 			      port_name(port), info->dp_boost_level);
-		info->hdmi_boost_level = translate_iboost(child->iboost_level >> 4);
+		info->hdmi_boost_level = translate_iboost(child->hdmi_iboost_level);
 		DRM_DEBUG_KMS("VBT HDMI boost level for port %c: %d\n",
 			      port_name(port), info->hdmi_boost_level);
 	}
