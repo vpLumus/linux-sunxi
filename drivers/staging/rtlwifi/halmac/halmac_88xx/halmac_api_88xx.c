@@ -1950,8 +1950,10 @@ halmac_dump_logical_efuse_map_88xx(struct halmac_adapter *halmac_adapter,
 
 		if (halmac_eeprom_parser_88xx(halmac_adapter,
 					      halmac_adapter->hal_efuse_map,
-					      eeprom_map) != HALMAC_RET_SUCCESS)
+					      eeprom_map) != HALMAC_RET_SUCCESS) {
+			kfree(eeprom_map);
 			return HALMAC_RET_EEPROM_PARSING_FAIL;
+		}
 
 		PLATFORM_EVENT_INDICATION(
 			driver_adapter, HALMAC_FEATURE_DUMP_LOGICAL_EFUSE,
@@ -4445,7 +4447,7 @@ halmac_func_p2pps_88xx(struct halmac_adapter *halmac_adapter,
 {
 	u8 h2c_buff[HALMAC_H2C_CMD_SIZE_88XX] = {0};
 	u16 h2c_seq_mum = 0;
-	void *driver_adapter = NULL;
+	void *driver_adapter = halmac_adapter->driver_adapter;
 	struct halmac_api *halmac_api;
 	struct halmac_h2c_header_info h2c_header_info;
 	enum halmac_ret_status status = HALMAC_RET_SUCCESS;
@@ -4453,7 +4455,6 @@ halmac_func_p2pps_88xx(struct halmac_adapter *halmac_adapter,
 	HALMAC_RT_TRACE(driver_adapter, HALMAC_MSG_H2C, DBG_DMESG,
 			"[TRACE]halmac_p2pps !!\n");
 
-	driver_adapter = halmac_adapter->driver_adapter;
 	halmac_api = (struct halmac_api *)halmac_adapter->halmac_api;
 
 	P2PPS_SET_OFFLOAD_EN(h2c_buff, p2p_ps->offload_en);
@@ -5308,7 +5309,6 @@ halmac_write_cam_88xx(struct halmac_adapter *halmac_adapter, u32 entry_index,
 	cam_entry_format = kzalloc(sizeof(*cam_entry_format), GFP_KERNEL);
 	if (!cam_entry_format)
 		return HALMAC_RET_NULL_POINTER;
-	memset(cam_entry_format, 0x00, sizeof(*cam_entry_format));
 
 	cam_entry_format->key_id = cam_entry_info->key_id;
 	cam_entry_format->valid = cam_entry_info->valid;
@@ -5461,7 +5461,6 @@ halmac_clear_cam_entry_88xx(struct halmac_adapter *halmac_adapter,
 	cam_entry_format = kzalloc(sizeof(*cam_entry_format), GFP_KERNEL);
 	if (!cam_entry_format)
 		return HALMAC_RET_NULL_POINTER;
-	memset(cam_entry_format, 0x00, sizeof(*cam_entry_format));
 
 	for (i = 0; i < 8; i++) {
 		HALMAC_REG_WRITE_32(halmac_adapter, REG_CAMWRITE,

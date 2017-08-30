@@ -1414,6 +1414,10 @@ bool rtl_action_proc(struct ieee80211_hw *hw, struct sk_buff *skb, u8 is_tx)
 				  le16_to_cpu(mgmt->u.action.u.addba_req.capab);
 				tid = (capab &
 				       IEEE80211_ADDBA_PARAM_TID_MASK) >> 2;
+				if (tid >= MAX_TID_COUNT) {
+					rcu_read_unlock();
+					return true;
+				}
 				tid_data = &sta_entry->tids[tid];
 				if (tid_data->agg.rx_agg_state ==
 				    RTL_RX_AGG_START)
@@ -2554,7 +2558,6 @@ bool rtl_check_beacon_key(struct ieee80211_hw *hw, void *data, unsigned int len)
 
 	if (!cur_bcn_key->valid) {
 		/* update cur_beacon_keys */
-		memset(cur_bcn_key, 0, sizeof(bcn_key));
 		memcpy(cur_bcn_key, &bcn_key, sizeof(bcn_key));
 		cur_bcn_key->valid = true;
 

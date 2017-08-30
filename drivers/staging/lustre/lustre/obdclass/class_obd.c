@@ -180,7 +180,8 @@ int class_handle_ioctl(unsigned int cmd, unsigned long arg)
 			err = -ENOMEM;
 			goto out;
 		}
-		err = copy_from_user(lcfg, data->ioc_pbuf1, data->ioc_plen1);
+		if (copy_from_user(lcfg, data->ioc_pbuf1, data->ioc_plen1))
+			err = -EFAULT;
 		if (!err)
 			err = lustre_cfg_sanity_check(lcfg, data->ioc_plen1);
 		if (!err)
@@ -262,7 +263,6 @@ int class_handle_ioctl(unsigned int cmd, unsigned long arg)
 		       dev);
 
 		if (copy_to_user((void __user *)arg, data, sizeof(*data)))
-		if (err)
 			err = -EFAULT;
 		goto out;
 	}
@@ -448,7 +448,7 @@ static int __init obdclass_init(void)
 	obd_zombie_impexp_init();
 
 	err = obd_init_checks();
-	if (err == -EOVERFLOW)
+	if (err)
 		return err;
 
 	class_init_uuidlist();
