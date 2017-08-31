@@ -382,33 +382,7 @@ static void deinit_priv(struct rtl_halmac *halmac)
 
 	indicator = halmac->indicator;
 	halmac->indicator = NULL;
-	if (indicator) {
-		u32 count, size;
-
-		count = HALMAC_FEATURE_ALL + 1;
-#ifdef CONFIG_RTL_DEBUG
-		{
-			struct submit_ctx *sctx;
-			u32 i;
-
-			for (i = 0; i < count; i++) {
-				if (!indicator[i].sctx)
-					continue;
-
-				RT_TRACE(
-					rtlpriv, COMP_HALMAC, DBG_LOUD,
-					"%s: <WARN> %s id(%d) sctx still exist!!\n",
-					__func__, RTL_HALMAC_FEATURE_NAME[i],
-					i);
-				sctx = indicator[i].sctx;
-				indicator[i].sctx = NULL;
-				rtl_mfree((u8 *)sctx, sizeof(*sctx));
-			}
-		}
-#endif /* !CONFIG_RTL_DEBUG */
-		size = sizeof(*indicator) * count;
-		kfree((u8 *)indicator);
-	}
+	kfree(indicator);
 }
 
 int rtl_halmac_init_adapter(struct rtl_priv *rtlpriv)
