@@ -447,6 +447,7 @@ struct intel_initial_plane_config {
 	unsigned int tiling;
 	int size;
 	u32 base;
+	int panel_orientation; /* DRM_MODE_PANEL_ORIENTATION_* */
 };
 
 #define SKL_MIN_SRC_W 8
@@ -1703,6 +1704,10 @@ extern struct drm_display_mode *intel_find_panel_downclock(
 				struct drm_i915_private *dev_priv,
 				struct drm_display_mode *fixed_mode,
 				struct drm_connector *connector);
+void intel_panel_set_orientation_from_crtc(struct intel_panel *panel,
+					   struct intel_crtc *intel_crtc,
+					   int orientation);
+void intel_panel_init_orientation_prop(struct intel_panel *panel);
 
 #if IS_ENABLED(CONFIG_BACKLIGHT_CLASS_DEVICE)
 int intel_backlight_device_register(struct intel_connector *connector);

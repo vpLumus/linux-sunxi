@@ -1925,11 +1925,44 @@ intel_panel_init_backlight_funcs(struct intel_panel *panel)
 	}
 }
 
+void intel_panel_set_orientation_from_crtc(struct intel_panel *panel,
+					   struct intel_crtc *intel_crtc,
+					   int orientation)
+{
+	struct intel_connector *panel_conn;
+
+	if (!panel)
+		return;
+
+	panel_conn = container_of(panel, struct intel_connector, panel);
+	if (panel_conn->base.state->crtc == &intel_crtc->base)
+		panel_conn->base.display_info.panel_orientation = orientation;
+}
+
+void intel_panel_init_orientation_prop(struct intel_panel *panel)
+{
+	struct intel_connector *panel_conn;
+
+	if (!panel || !panel->fixed_mode)
+		return;
+
+	panel_conn = container_of(panel, struct intel_connector, panel);
+	drm_connector_init_panel_orientation_property(&panel_conn->base,
+		panel->fixed_mode->hdisplay, panel->fixed_mode->vdisplay);
+}
+
 int intel_panel_init(struct intel_panel *panel,
 		     struct drm_display_mode *fixed_mode,
 		     struct drm_display_mode *alt_fixed_mode,
 		     struct drm_display_mode *downclock_mode)
 {
+	struct intel_connector *intel_connector =
+		container_of(panel, struct intel_connector, panel);
+	struct drm_i915_private *dev_priv = to_i915(intel_connector->base.dev);
+
+	if (!dev_priv->panel)
+		dev_priv->panel = panel;
+
 	intel_panel_init_backlight_funcs(panel);
 
 	panel->fixed_mode = fixed_mode;

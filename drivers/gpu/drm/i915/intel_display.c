@@ -2891,6 +2891,9 @@ valid_fb:
 		return;
 	}
 
+	intel_panel_set_orientation_from_crtc(dev_priv->panel, intel_crtc,
+					      plane_config->panel_orientation);
+
 	plane_state->src_x = 0;
 	plane_state->src_y = 0;
 	plane_state->src_w = fb->width << 16;
@@ -7523,6 +7526,10 @@ i9xx_get_initial_plane_config(struct intel_crtc *crtc,
 			plane_config->tiling = I915_TILING_X;
 			fb->modifier = I915_FORMAT_MOD_X_TILED;
 		}
+
+		if (val & DISPPLANE_ROTATE_180)
+			plane_config->panel_orientation =
+				DRM_MODE_PANEL_ORIENTATION_BOTTOM_UP;
 	}
 
 	pixel_format = val & DISPPLANE_PIXFORMAT_MASK;
@@ -8576,6 +8583,24 @@ skylake_get_initial_plane_config(struct intel_crtc *crtc,
 		goto error;
 	}
 
+	/* The rotation is used to *correct* for the panel orientation */
+	switch (val & PLANE_CTL_ROTATE_MASK) {
+	case PLANE_CTL_ROTATE_0:
+		break;
+	case PLANE_CTL_ROTATE_90:
+		plane_config->panel_orientation =
+			DRM_MODE_PANEL_ORIENTATION_RIGHT_UP;
+		break;
+	case PLANE_CTL_ROTATE_180:
+		plane_config->panel_orientation =
+			DRM_MODE_PANEL_ORIENTATION_BOTTOM_UP;
+		break;
+	case PLANE_CTL_ROTATE_270:
+		plane_config->panel_orientation =
+			DRM_MODE_PANEL_ORIENTATION_LEFT_UP;
+		break;
+	}
+
 	base = I915_READ(PLANE_SURF(pipe, 0)) & 0xfffff000;
 	plane_config->base = base;
 
@@ -8661,6 +8686,10 @@ ironlake_get_initial_plane_config(struct intel_crtc *crtc,
 			plane_config->tiling = I915_TILING_X;
 			fb->modifier = I915_FORMAT_MOD_X_TILED;
 		}
+
+		if (val & DISPPLANE_ROTATE_180)
+			plane_config->panel_orientation =
+				DRM_MODE_PANEL_ORIENTATION_BOTTOM_UP;
 	}
 
 	pixel_format = val & DISPPLANE_PIXFORMAT_MASK;
@@ -14578,7 +14607,9 @@ int intel_modeset_init(struct drm_device *dev)
 	drm_modeset_unlock_all(dev);
 
 	for_each_intel_crtc(dev, crtc) {
-		struct intel_initial_plane_config plane_config = {};
+		struct intel_initial_plane_config plane_config = {
+			.panel_orientation = DRM_MODE_PANEL_ORIENTATION_NORMAL,
+		};
 
 		if (!crtc->active)
 			continue;
@@ -14599,6 +14630,12 @@ int intel_modeset_init(struct drm_device *dev)
 		 */
 		intel_find_initial_plane_obj(crtc, &plane_config);
 	}
+
+	/*
+	 * Init panel orientation prop now that intel_find_initial_plane_obj()
+	 * has had a chance to set panel orientation.
+	 */
+	intel_panel_init_orientation_prop(dev_priv->panel);
 
 	/*
 	 * Make sure hardware watermarks really match the state we read out.
