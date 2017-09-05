@@ -2151,6 +2151,8 @@ struct intel_cdclk_state {
 	unsigned int cdclk, vco, ref;
 };
 
+struct intel_panel;
+
 struct drm_i915_private {
 	struct drm_device drm;
 
@@ -2200,6 +2202,7 @@ struct drm_i915_private {
 	struct i915_gem_context *kernel_context;
 	struct intel_engine_cs *engine[I915_NUM_ENGINES];
 	struct i915_vma *semaphore;
+	struct intel_panel *panel;
 
 	struct drm_dma_handle *status_page_dmah;
 	struct resource mch_res;
